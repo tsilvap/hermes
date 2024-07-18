@@ -141,6 +141,32 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("/u/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/u-text.tmpl")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /u/: parsing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+			filename := strings.TrimPrefix(r.URL.Path, "/u/")
+			rawText, err := os.ReadFile(filepath.Join(cfg.Storage.UploadedFilesDir, filename))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /u/: reading file: %v\n", err)
+				internalServerError(w)
+				return
+			}
+			err = tmpl.Execute(w, map[string]string{"Title": filename, "Text": string(rawText)})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /u/: executing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+		} else {
+			methodNotAllowed(w, []string{http.MethodGet, http.MethodHead})
+		}
+	})
+
 	addr := ":8080"
 	fmt.Printf("Serving application on %s...\n", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
