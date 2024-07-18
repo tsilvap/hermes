@@ -1,17 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <title>Hermes</title>
-  </head>
-  <body>
-    <main>
-      <h1>Hermes</h1>
-      <p>What do you want to upload?</p>
-      <ul>
-        <li><a href="/text">Plain text</a></li>
-        <li><a href="/data">File</a></li>
-      </ul>
-    </main>
-  </body>
-</html>
+{{define "body"}}
+<h1>Hermes</h1>
+<p>What do you want to upload?</p>
+<ul>
+  <li><a href="/text">Plain text</a></li>
+  <li><a href="/files">File</a></li>
+</ul>
+{{end}}

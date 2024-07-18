@@ -1,0 +1,6 @@
+[http]
+schema = "http"
+domain_name = "example.org"
+
+[storage]
+uploaded_files_dir = "/some/path/"
