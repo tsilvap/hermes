@@ -59,7 +59,13 @@ func main() {
 				internalServerError(w)
 				return
 			}
-			err = tmpl.Execute(w, nil)
+			uploadedFiles, err := getUploadedFiles(cfg.Storage.UploadedFilesDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /: getting list of uploaded files: %v\n", err)
+				internalServerError(w)
+				return
+			}
+			err = tmpl.Execute(w, map[string]any{"UploadedFiles": uploadedFiles})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /: executing template: %v\n", err)
 				internalServerError(w)
@@ -305,6 +311,30 @@ func methodNotAllowed(w http.ResponseWriter, allowedMethods []string) {
 	w.Header().Add("Allow", strings.Join(allowedMethods, ", "))
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	fmt.Fprintln(w, "Method Not Allowed")
+}
+
+type UploadedFile struct {
+	dirEntry os.DirEntry
+}
+
+func (f UploadedFile) Name() string {
+	return f.dirEntry.Name()
+}
+
+func (f UploadedFile) Link() string {
+	return fmt.Sprintf("%s://%s/u/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, f.Name())
+}
+
+func getUploadedFiles(uploadedFilesDir string) ([]UploadedFile, error) {
+	files, err := os.ReadDir(uploadedFilesDir)
+	if err != nil {
+		return nil, err
+	}
+	var uploadedFiles []UploadedFile
+	for _, f := range files {
+		uploadedFiles = append(uploadedFiles, UploadedFile{dirEntry: f})
+	}
+	return uploadedFiles, nil
 }
 
 const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"

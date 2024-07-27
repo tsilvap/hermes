@@ -4,4 +4,10 @@
   <li><a href="/text">Plain text</a></li>
   <li><a href="/files">File</a></li>
 </ul>
+<h2>Uploaded files</h2>
+<ul>
+  {{range .UploadedFiles}}
+  <li><a href="{{.Link}}">{{.Name}}</a></li>
+  {{end}}
+</ul>
 {{end}}
