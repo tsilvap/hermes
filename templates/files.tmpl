@@ -1,7 +1,7 @@
 {{define "body"}}
-<p>Upload files:</p>
-<form>
-  <input name="input" type="file">
+<p>Upload a file:</p>
+<form method="POST" enctype="multipart/form-data">
+  <input id="uploadedFile" name="uploadedFile" type="file">
   <button type="submit">Upload</button>
 </form>
 {{end}}

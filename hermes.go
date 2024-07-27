@@ -4,12 +4,15 @@ import (
 	"crypto/rand"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"math/big"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -107,14 +110,14 @@ func main() {
 				return
 			}
 
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/text-success.tmpl")
+			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/upload-success.tmpl")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: POST /text: parsing template: %v\n", err)
 				internalServerError(w)
 				return
 			}
 			err = tmpl.Execute(w, map[string]string{
-				"Link": fmt.Sprintf("%s://%s/u/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, filename),
+				"Link": fmt.Sprintf("%s://%s/t/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, filename),
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: POST /text: executing template: %v\n", err)
@@ -127,41 +130,147 @@ func main() {
 	})
 
 	http.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/files.tmpl")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: GET /files: parsing template: %v\n", err)
-			internalServerError(w)
-			return
-		}
-		err = tmpl.Execute(w, nil)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: GET /files: executing template: %v\n", err)
-			internalServerError(w)
-			return
-		}
-	})
-
-	http.HandleFunc("/u/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/u-text.tmpl")
+			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/files.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /u/: parsing template: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Error: GET /files: parsing template: %v\n", err)
 				internalServerError(w)
 				return
 			}
-			filename := strings.TrimPrefix(r.URL.Path, "/u/")
+			err = tmpl.Execute(w, nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /files: executing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+		} else if r.Method == http.MethodPost {
+			err := r.ParseMultipartForm(1 << 20) // 1 MB (max. upload size)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /files: parsing multipart form: %v", err)
+				internalServerError(w)
+				return
+			}
+			uploadedFile, header, err := r.FormFile("uploadedFile")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /files: get form file: %v", err)
+				internalServerError(w)
+				return
+			}
+			destFile, err := os.Create(filepath.Join(cfg.Storage.UploadedFilesDir, header.Filename))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /files: creating file: %v", err)
+				internalServerError(w)
+				return
+			}
+			err = destFile.Chmod(0600)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /files: changing file perms: %v", err)
+				internalServerError(w)
+				return
+			}
+			_, err = io.Copy(destFile, uploadedFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /files: writing file: %v", err)
+				internalServerError(w)
+				return
+			}
+
+			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/upload-success.tmpl")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /files: parsing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+			err = tmpl.Execute(w, map[string]string{
+				"Link": fmt.Sprintf("%s://%s/u/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, header.Filename),
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /files: executing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+		} else {
+			methodNotAllowed(w, []string{http.MethodGet, http.MethodPost, http.MethodHead})
+		}
+	})
+
+	http.HandleFunc("/t/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/t.tmpl")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /t/: parsing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+			filename := strings.TrimPrefix(r.URL.Path, "/t/")
 			rawText, err := os.ReadFile(filepath.Join(cfg.Storage.UploadedFilesDir, filename))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /u/: reading file: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Error: GET /t/: reading file: %v\n", err)
 				internalServerError(w)
 				return
 			}
 			err = tmpl.Execute(w, map[string]string{"Title": filename, "Text": string(rawText)})
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /t/: executing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+		} else {
+			methodNotAllowed(w, []string{http.MethodGet, http.MethodHead})
+		}
+	})
+
+	http.HandleFunc("/u/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/u.tmpl")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /u/: parsing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+			safeFilename, err := sanitizeFilename(strings.TrimPrefix(r.URL.Path, "/u/"))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /u/: %v\n", err)
+				// TODO: Return Bad Request and a proper error message.
+				internalServerError(w)
+				return
+			}
+			ctype := mime.TypeByExtension(filepath.Ext(safeFilename))
+			err = tmpl.Execute(w, map[string]string{
+				"Title":       safeFilename,
+				"MIMEType":    ctype,
+				"FileType":    strings.Split(ctype, "/")[0],
+				"RawfileLink": fmt.Sprintf("%s://%s/dl/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, safeFilename),
+			})
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /u/: executing template: %v\n", err)
 				internalServerError(w)
 				return
 			}
+		} else {
+			methodNotAllowed(w, []string{http.MethodGet, http.MethodHead})
+		}
+	})
+
+	http.HandleFunc("/dl/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			safeFilename, err := sanitizeFilename(strings.TrimPrefix(r.URL.Path, "/dl/"))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /dl/: %v\n", err)
+				// TODO: Return Bad Request and a proper error message.
+				internalServerError(w)
+				return
+			}
+			f, err := os.Open(filepath.Join(cfg.Storage.UploadedFilesDir, safeFilename))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /dl/: %v\n", err)
+				// TODO: Return Bad Request and a proper error message.
+				internalServerError(w)
+				return
+			}
+			defer f.Close()
+			http.ServeContent(w, r, safeFilename, time.Time{}, f)
+
 		} else {
 			methodNotAllowed(w, []string{http.MethodGet, http.MethodHead})
 		}
@@ -212,4 +321,14 @@ func generateTextFileName() (string, error) {
 	}
 
 	return fmt.Sprintf("%s.txt", identifier), nil
+}
+
+// sanitizeFilename returns a filename safe to be served.
+func sanitizeFilename(untrustedFilename string) (string, error) {
+	// In case the filename has path separators, get only the last element of the path.
+	base := filepath.Base(untrustedFilename)
+	if base == "." || base == ".." {
+		return "", fmt.Errorf("invalid filename: %q", untrustedFilename)
+	}
+	return base, nil
 }

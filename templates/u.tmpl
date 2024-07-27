@@ -1,0 +1,15 @@
+{{define "body"}}
+<h2>{{.Title}}</h2>
+
+{{if eq .FileType "image"}}
+<img src="{{.RawfileLink}}" alt="{{.Title}}" />
+{{else if eq .FileType "video"}}
+<video controls>
+  <source src="{{.RawfileLink}}" type="{{.MIMEType}}" />
+</video>
+{{else}}
+<p>No preview available for this file type.</p>
+{{end}}
+
+<p>Link to raw file: <input type="url" value="{{.RawfileLink}}" readonly /></p>
+{{end}}
