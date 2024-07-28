@@ -1,7 +1,9 @@
+//go:generate npm run build
 package main
 
 import (
 	"crypto/rand"
+	"embed"
 	"fmt"
 	"html/template"
 	"io"
@@ -34,6 +36,9 @@ type StorageConfig struct {
 var hermesDir string
 var cfg Config
 
+//go:embed static
+var static embed.FS
+
 func init() {
 	hermesDir := os.Getenv("HERMES_DIR")
 	if len(hermesDir) == 0 {
@@ -51,6 +56,8 @@ func init() {
 }
 
 func main() {
+	http.Handle("/static/", http.FileServer(http.FS(static)))
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/index.tmpl")
@@ -321,8 +328,20 @@ func (f UploadedFile) Name() string {
 	return f.dirEntry.Name()
 }
 
-func (f UploadedFile) Link() string {
+func (f UploadedFile) PageLink() string {
 	return fmt.Sprintf("%s://%s/u/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, f.Name())
+}
+
+func (f UploadedFile) FileLink() string {
+	return fmt.Sprintf("%s://%s/dl/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, f.Name())
+}
+
+func (f UploadedFile) MIMEType() string {
+	return mime.TypeByExtension(filepath.Ext(f.Name()))
+}
+
+func (f UploadedFile) Type() string {
+	return strings.Split(f.MIMEType(), "/")[0]
 }
 
 func getUploadedFiles(uploadedFilesDir string) ([]UploadedFile, error) {

@@ -1,7 +1,9 @@
 {{define "body"}}
-<p>Upload plain text:</p>
+<p class="mb-4">Upload plain text.</p>
 <form method="POST">
-  <textarea cols="30" id="input" name="input" rows="10" required></textarea>
-  <button type="submit">Upload</button>
+  <div class="grid grid-flow-1 mb-4">
+    <textarea class="textarea textarea-bordered" id="input" name="input" rows="10" required></textarea>
+  </div>
+  <button class="btn btn-primary" type="submit">Upload</button>
 </form>
 {{end}}

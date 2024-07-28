@@ -2,12 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="/static/css/tailwind.css" rel="stylesheet">
     <title>Hermes</title>
   </head>
   <body>
-    <main>
-      <h1><a href="/">Hermes</a></h1>
+    <nav class="navbar bg-base-300">
+      <a class="btn btn-ghost text-xl" href="/">Hermes</a>
+    </nav>
+
+    <main class="mx-auto mt-36 max-w-xl">
+      <h1 class="text-5xl font-bold mb-6"><a href="/">Hermes</a></h1>
       {{block "body" .}}{{end}}
     </main>
+
+    <footer class="footer footer-center bg-base-300 text-base-content p-4 mt-16">
+      <aside>
+        <p>The source code for this website is on <a class="link" href="https://github.com/tsilvap/hermes">GitHub</a>.</p>
+      </aside>
+    </footer>
   </body>
 </html>
