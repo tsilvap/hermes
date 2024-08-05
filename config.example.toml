@@ -3,4 +3,5 @@ schema = "http"
 domain_name = "example.org"
 
 [storage]
+db_path = "/some/path/hermes.db"
 uploaded_files_dir = "/some/path/"

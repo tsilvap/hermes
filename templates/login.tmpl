@@ -1,0 +1,13 @@
+{{define "body"}}
+<h2 class="text-bold text-2xl mb-4">Login</h2>
+{{if .BadLogin}}
+<p class="mb-4">Incorect username and/or password.</p>
+{{end}}
+<form class="w-96" method="POST">
+  <div class="flex flex-col gap-4 mb-4">
+    <input class="input input-bordered w-full" placeholder="Username" name="username" type="text">
+    <input class="input input-bordered w-full" placeholder="Password" name="password" type="password">
+  </div>
+  <button class="btn btn-primary" type="submit">Login</button>
+</form>
+{{end}}

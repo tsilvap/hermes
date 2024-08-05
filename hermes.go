@@ -2,8 +2,12 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
+	"database/sql"
 	"embed"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -16,6 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/argon2"
+
+	"github.com/alexedwards/scs/v2"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -30,6 +38,7 @@ type HTTPConfig struct {
 }
 
 type StorageConfig struct {
+	DBPath           string `toml:"db_path"`
 	UploadedFilesDir string `toml:"uploaded_files_dir"`
 }
 
@@ -39,7 +48,13 @@ var cfg Config
 //go:embed static
 var static embed.FS
 
+var sessionManager *scs.SessionManager
+
 func init() {
+	sessionManager = scs.New()
+	sessionManager.Lifetime = 365 * 24 * time.Hour
+	sessionManager.Cookie.Name = "id"
+
 	hermesDir := os.Getenv("HERMES_DIR")
 	if len(hermesDir) == 0 {
 		hermesDir = filepath.Join(os.Getenv("HOME"), ".hermes/")
@@ -50,15 +65,21 @@ func init() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	if len(cfg.Storage.UploadedFilesDir) == 0 {
+	if cfg.Storage.DBPath == "" {
+		cfg.Storage.DBPath = filepath.Join(hermesDir, "hermes.db")
+	}
+	if cfg.Storage.UploadedFilesDir == "" {
 		cfg.Storage.UploadedFilesDir = filepath.Join(hermesDir, "uploaded/")
 	}
+
 }
 
 func main() {
-	http.Handle("/static/", http.FileServer(http.FS(static)))
+	mux := http.NewServeMux()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/static/", http.FileServer(http.FS(static)))
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/index.tmpl")
 			if err != nil {
@@ -72,7 +93,12 @@ func main() {
 				internalServerError(w)
 				return
 			}
-			err = tmpl.Execute(w, map[string]any{"UploadedFiles": uploadedFiles})
+			err = tmpl.Execute(w, map[string]any{
+				"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
+				"User":          sessionManager.GetString(r.Context(), "user"),
+
+				"UploadedFiles": uploadedFiles,
+			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /: executing template: %v\n", err)
 				internalServerError(w)
@@ -83,7 +109,71 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/text", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/login.tmpl")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /login: parsing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+			err = tmpl.Execute(w, nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: GET /login: executing template: %v\n", err)
+				internalServerError(w)
+				return
+			}
+		} else if r.Method == http.MethodPost {
+			err := r.ParseForm()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /login: parsing form: %v", err)
+				internalServerError(w)
+				return
+
+			}
+			if !r.PostForm.Has("username") || !r.PostForm.Has("password") {
+				// TODO: Handle missing fields.
+				fmt.Printf("%#v\n", r.PostForm)
+				internalServerError(w) // Will be changed to BadRequest.
+				return
+			}
+			if err := authenticateUser(r, r.PostForm.Get("username"), r.PostForm.Get("password")); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /login: authenticating user %q: %v\n", r.PostForm.Get("username"), err)
+
+				tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/login.tmpl")
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: POST /login: parsing template: %v\n", err)
+					internalServerError(w)
+					return
+				}
+				err = tmpl.Execute(w, map[string]any{"BadLogin": true})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: POST /login: executing template: %v\n", err)
+					internalServerError(w)
+					return
+				}
+				return
+			}
+			sendTo(w, "/")
+		} else {
+			methodNotAllowed(w, []string{http.MethodGet, http.MethodPost, http.MethodHead})
+		}
+	})
+
+	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			if err := sessionManager.Destroy(r.Context()); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /logout: clearing session data: %v\n", err)
+				internalServerError(w)
+				return
+			}
+			sendTo(w, "/")
+		} else {
+			methodNotAllowed(w, []string{http.MethodPost})
+		}
+	})
+
+	mux.HandleFunc("/text", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/text.tmpl")
 			if err != nil {
@@ -91,7 +181,10 @@ func main() {
 				internalServerError(w)
 				return
 			}
-			err = tmpl.Execute(w, nil)
+			err = tmpl.Execute(w, map[string]any{
+				"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
+				"User":          sessionManager.GetString(r.Context(), "user"),
+			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /text: executing template: %v\n", err)
 				internalServerError(w)
@@ -129,7 +222,10 @@ func main() {
 				internalServerError(w)
 				return
 			}
-			err = tmpl.Execute(w, map[string]string{
+			err = tmpl.Execute(w, map[string]any{
+				"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
+				"User":          sessionManager.GetString(r.Context(), "user"),
+
 				"Link": fmt.Sprintf("%s://%s/t/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, filename),
 			})
 			if err != nil {
@@ -142,7 +238,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/files.tmpl")
 			if err != nil {
@@ -150,7 +246,10 @@ func main() {
 				internalServerError(w)
 				return
 			}
-			err = tmpl.Execute(w, nil)
+			err = tmpl.Execute(w, map[string]any{
+				"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
+				"User":          sessionManager.GetString(r.Context(), "user"),
+			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /files: executing template: %v\n", err)
 				internalServerError(w)
@@ -194,7 +293,10 @@ func main() {
 				internalServerError(w)
 				return
 			}
-			err = tmpl.Execute(w, map[string]string{
+			err = tmpl.Execute(w, map[string]any{
+				"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
+				"User":          sessionManager.GetString(r.Context(), "user"),
+
 				"Link": fmt.Sprintf("%s://%s/u/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, header.Filename),
 			})
 			if err != nil {
@@ -207,7 +309,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/t/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/t/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/t.tmpl")
 			if err != nil {
@@ -222,7 +324,13 @@ func main() {
 				internalServerError(w)
 				return
 			}
-			err = tmpl.Execute(w, map[string]string{"Title": filename, "Text": string(rawText)})
+			err = tmpl.Execute(w, map[string]any{
+				"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
+				"User":          sessionManager.GetString(r.Context(), "user"),
+
+				"Title": filename,
+				"Text":  string(rawText),
+			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /t/: executing template: %v\n", err)
 				internalServerError(w)
@@ -233,7 +341,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/u/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/u/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/u.tmpl")
 			if err != nil {
@@ -249,7 +357,10 @@ func main() {
 				return
 			}
 			ctype := mime.TypeByExtension(filepath.Ext(safeFilename))
-			err = tmpl.Execute(w, map[string]string{
+			err = tmpl.Execute(w, map[string]any{
+				"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
+				"User":          sessionManager.GetString(r.Context(), "user"),
+
 				"Title":       safeFilename,
 				"MIMEType":    ctype,
 				"FileType":    strings.Split(ctype, "/")[0],
@@ -265,7 +376,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/dl/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/dl/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			safeFilename, err := sanitizeFilename(strings.TrimPrefix(r.URL.Path, "/dl/"))
 			if err != nil {
@@ -291,7 +402,7 @@ func main() {
 
 	addr := ":8080"
 	fmt.Printf("Serving application on %s...\n", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Fatal(http.ListenAndServe(addr, sessionManager.LoadAndSave(mux)))
 }
 
 func readConfig(path string) (Config, error) {
@@ -318,6 +429,55 @@ func methodNotAllowed(w http.ResponseWriter, allowedMethods []string) {
 	w.Header().Add("Allow", strings.Join(allowedMethods, ", "))
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	fmt.Fprintln(w, "Method Not Allowed")
+}
+
+// sendTo redirects the user to the given webpage after a POST or PUT.
+//
+// See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/303
+func sendTo(w http.ResponseWriter, path string) {
+	w.Header().Add("Location", path)
+	w.WriteHeader(http.StatusSeeOther)
+}
+
+// authenticateUser authenticates the user and creates a new session.
+func authenticateUser(r *http.Request, username, password string) error {
+	db, err := sql.Open("sqlite3", cfg.Storage.DBPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	stmt, err := db.Prepare(`select salt, hash from users where username = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	var saltHex, hashHex string
+	err = stmt.QueryRow(username).Scan(&saltHex, &hashHex)
+	if err != nil {
+		return errors.New("user not found")
+	}
+
+	// Decode salt and saved hash to bytes.
+	salt, err := hex.DecodeString(saltHex)
+	if err != nil {
+		return fmt.Errorf("decoding saved salt to bytes: %v", err)
+	}
+	savedHash, err := hex.DecodeString(hashHex)
+	if err != nil {
+		return fmt.Errorf("decoding saved argon2id hash to bytes: %v", err)
+	}
+
+	// Compute Argon2id key and compare with saved hash.
+	key := argon2.IDKey([]byte(password), salt, 1, 60*1024, 1, 32)
+	if !bytes.Equal(key, savedHash) {
+		return errors.New("incorrect password")
+	}
+
+	// Save user authentication information to session.
+	sessionManager.Put(r.Context(), "authenticated", true)
+	sessionManager.Put(r.Context(), "user", username)
+
+	return nil
 }
 
 type UploadedFile struct {

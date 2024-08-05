@@ -8,19 +8,37 @@
     <title>Hermes</title>
   </head>
   <body>
-    <nav class="navbar bg-base-300">
-      <a class="btn btn-ghost text-xl" href="/">Hermes</a>
-    </nav>
+    <div class="flex flex-col min-h-screen">
+      <nav class="navbar bg-base-300">
+        <div class="flex-1">
+          <a class="btn btn-ghost text-xl" href="/">Hermes</a>
+        </div>
+        <div class="flex-none">
+          <ul class="menu menu-horizontal px-1">
+            {{if .Authenticated}}
+            <li><p>{{.User}}</p></li>
+            <li>
+              <form action="/logout" method="POST">
+                <button type="Submit">Logout</a>
+              </form>
+            </li>
+            {{else}}
+            <li><a href="/login">Login</a></li>
+            {{end}}
+          </ul>
+        </div>
+      </nav>
 
-    <main class="mx-auto mt-36 max-w-xl">
-      <h1 class="text-5xl font-bold mb-6"><a href="/">Hermes</a></h1>
-      {{block "body" .}}{{end}}
-    </main>
+      <main class="grow mx-auto mt-36 max-w-xl">
+        <h1 class="text-5xl font-bold mb-6"><a href="/">Hermes</a></h1>
+        {{block "body" .}}{{end}}
+      </main>
 
-    <footer class="footer footer-center bg-base-300 text-base-content p-4 mt-16">
-      <aside>
-        <p>The source code for this website is on <a class="link" href="https://github.com/tsilvap/hermes">GitHub</a>.</p>
-      </aside>
-    </footer>
+      <footer class="footer footer-center bg-base-300 text-base-content p-4 mt-16">
+        <aside>
+          <p>The source code for this website is on <a class="link" href="https://github.com/tsilvap/hermes">GitHub</a>.</p>
+        </aside>
+      </footer>
+    </div>
   </body>
 </html>
