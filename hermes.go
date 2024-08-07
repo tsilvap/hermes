@@ -111,6 +111,10 @@ func main() {
 
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			if loggedIn(r) {
+				sendTo(w, "/")
+				return
+			}
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/login.tmpl")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /login: parsing template: %v\n", err)
