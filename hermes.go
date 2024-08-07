@@ -175,6 +175,10 @@ func main() {
 
 	mux.HandleFunc("/text", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			if !loggedIn(r) {
+				sendTo(w, "/login")
+				return
+			}
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/text.tmpl")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /text: parsing template: %v\n", err)
@@ -191,6 +195,10 @@ func main() {
 				return
 			}
 		} else if r.Method == http.MethodPost {
+			if !loggedIn(r) {
+				unauthorized(w)
+				return
+			}
 			err := r.ParseForm()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: POST /text: parsing form: %v", err)
@@ -240,6 +248,10 @@ func main() {
 
 	mux.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			if !loggedIn(r) {
+				sendTo(w, "/login")
+				return
+			}
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/files.tmpl")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: GET /files: parsing template: %v\n", err)
@@ -256,6 +268,10 @@ func main() {
 				return
 			}
 		} else if r.Method == http.MethodPost {
+			if !loggedIn(r) {
+				unauthorized(w)
+				return
+			}
 			err := r.ParseMultipartForm(1 << 20) // 1 MB (max. upload size)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: POST /files: parsing multipart form: %v", err)
@@ -418,10 +434,9 @@ func readConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-// internalServerError returns an Internal Server Error response.
-func internalServerError(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusInternalServerError)
-	fmt.Fprintln(w, "Internal Server Error")
+func unauthorized(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusUnauthorized)
+	fmt.Fprintln(w, "You must be logged in to perform this action.")
 }
 
 // methodNotAllowed returns a Method Not Allowed response.
@@ -429,6 +444,12 @@ func methodNotAllowed(w http.ResponseWriter, allowedMethods []string) {
 	w.Header().Add("Allow", strings.Join(allowedMethods, ", "))
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	fmt.Fprintln(w, "Method Not Allowed")
+}
+
+// internalServerError returns an Internal Server Error response.
+func internalServerError(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusInternalServerError)
+	fmt.Fprintln(w, "Internal Server Error")
 }
 
 // sendTo redirects the user to the given webpage after a POST or PUT.
@@ -478,6 +499,10 @@ func authenticateUser(r *http.Request, username, password string) error {
 	sessionManager.Put(r.Context(), "user", username)
 
 	return nil
+}
+
+func loggedIn(r *http.Request) bool {
+	return sessionManager.GetBool(r.Context(), "authenticated")
 }
 
 type UploadedFile struct {
