@@ -227,6 +227,26 @@ func main() {
 				internalServerError(w)
 				return
 			}
+			db, err := sql.Open("sqlite3", cfg.Storage.DBPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /text: %v", err)
+				internalServerError(w)
+				return
+			}
+			defer db.Close()
+			stmt, err := db.Prepare(`insert into uploaded_files(title, uploader, file_path, created_at) values(?, ?, ?, ?)`)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /text: %v", err)
+				internalServerError(w)
+				return
+			}
+			defer stmt.Close()
+			_, err = stmt.Exec(filename, sessionManager.GetString(r.Context(), "user"), filename, time.Now().Unix())
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: POST /text: %v", err)
+				internalServerError(w)
+				return
+			}
 
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/upload-success.tmpl")
 			if err != nil {

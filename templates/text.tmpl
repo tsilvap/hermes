@@ -1,8 +1,9 @@
 {{define "body"}}
 <p class="mb-4">Upload plain text.</p>
-<form method="POST">
-  <div class="grid grid-flow-1 mb-4">
-    <textarea class="textarea textarea-bordered" id="input" name="input" rows="10" required></textarea>
+<form class="w-96" method="POST">
+  <div class="flex flex-col gap-4 mb-4">
+    <input class="input input-bordered w-full" name="title" type="text" placeholder="Title (optional)" />
+    <textarea class="textarea textarea-bordered" id="input" name="input" rows="10" placeholder="Insert your text here..." required></textarea>
   </div>
   <button class="btn btn-primary" type="submit">Upload</button>
 </form>
