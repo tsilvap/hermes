@@ -1,4 +1,5 @@
 [http]
+addr = "127.0.0.1:8080"
 schema = "http"
 domain_name = "example.org"
 

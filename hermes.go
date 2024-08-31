@@ -33,6 +33,7 @@ type Config struct {
 }
 
 type HTTPConfig struct {
+	Addr       string `toml:"addr"`
 	Schema     string `toml:"schema"`
 	DomainName string `toml:"domain_name"`
 }
@@ -64,6 +65,9 @@ func init() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+	if cfg.HTTP.Addr == "" {
+		cfg.HTTP.Addr = "127.0.0.1:8080"
 	}
 	if cfg.Storage.DBPath == "" {
 		cfg.Storage.DBPath = filepath.Join(hermesDir, "hermes.db")
@@ -440,9 +444,8 @@ func main() {
 		}
 	})
 
-	addr := "127.0.0.1:8080"
-	fmt.Printf("Serving application on %s...\n", addr)
-	log.Fatal(http.ListenAndServe(addr, sessionManager.LoadAndSave(mux)))
+	fmt.Printf("Serving application on %s...\n", cfg.HTTP.Addr)
+	log.Fatal(http.ListenAndServe(cfg.HTTP.Addr, sessionManager.LoadAndSave(mux)))
 }
 
 func readConfig(path string) (Config, error) {
