@@ -440,7 +440,7 @@ func main() {
 		}
 	})
 
-	addr := ":8080"
+	addr := "127.0.0.1:8080"
 	fmt.Printf("Serving application on %s...\n", addr)
 	log.Fatal(http.ListenAndServe(addr, sessionManager.LoadAndSave(mux)))
 }
