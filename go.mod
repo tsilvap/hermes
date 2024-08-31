@@ -1,6 +1,6 @@
 module github.com/tsilvap/hermes
 
-go 1.21.3
+go 1.21.1
 
 require (
 	github.com/alexedwards/scs/v2 v2.8.0
