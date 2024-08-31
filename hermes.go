@@ -43,7 +43,6 @@ type StorageConfig struct {
 	UploadedFilesDir string `toml:"uploaded_files_dir"`
 }
 
-var hermesDir string
 var cfg Config
 
 //go:embed static
@@ -56,12 +55,12 @@ func init() {
 	sessionManager.Lifetime = 365 * 24 * time.Hour
 	sessionManager.Cookie.Name = "id"
 
-	hermesDir := os.Getenv("HERMES_DIR")
-	if len(hermesDir) == 0 {
-		hermesDir = filepath.Join(os.Getenv("HOME"), ".hermes/")
+	configPath := os.Getenv("HERMES_CONFIG")
+	if configPath == "" {
+		configPath = "/etc/hermes/config.toml"
 	}
 	var err error
-	cfg, err = readConfig(filepath.Join(hermesDir, "config.toml"))
+	cfg, err = readConfig(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -70,10 +69,10 @@ func init() {
 		cfg.HTTP.Addr = "127.0.0.1:8080"
 	}
 	if cfg.Storage.DBPath == "" {
-		cfg.Storage.DBPath = filepath.Join(hermesDir, "hermes.db")
+		cfg.Storage.DBPath = "/var/hermes/hermes.db"
 	}
 	if cfg.Storage.UploadedFilesDir == "" {
-		cfg.Storage.UploadedFilesDir = filepath.Join(hermesDir, "uploaded/")
+		cfg.Storage.UploadedFilesDir = "/var/hermes/uploaded_files/"
 	}
 
 }
