@@ -8,10 +8,12 @@ import (
 	"embed"
 	"encoding/hex"
 	"errors"
+	"flag"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
+	"log/syslog"
 	"math/big"
 	"mime"
 	"net/http"
@@ -45,6 +47,70 @@ type StorageConfig struct {
 
 var cfg Config
 
+type Logger interface {
+	Error(format string, a ...any)
+	Warn(format string, a ...any)
+	Info(format string, a ...any)
+}
+
+type StderrLogger struct {
+	logger *log.Logger
+}
+
+func NewStderrLogger() *StderrLogger {
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+	return &StderrLogger{logger}
+}
+
+func (l *StderrLogger) Error(format string, a ...any) {
+	l.logger.Printf("ERROR: "+format+"\n", a...)
+}
+
+func (l *StderrLogger) Warn(format string, a ...any) {
+	l.logger.Printf("WARN: "+format+"\n", a...)
+}
+
+func (l *StderrLogger) Info(format string, a ...any) {
+	l.logger.Printf("INFO: "+format+"\n", a...)
+}
+
+type SyslogLogger struct {
+	errLogger  *log.Logger
+	warnLogger *log.Logger
+	infoLogger *log.Logger
+}
+
+func NewSyslogLogger() (*SyslogLogger, error) {
+	logFlag := log.LstdFlags
+	errLogger, err := syslog.NewLogger(syslog.LOG_LOCAL0|syslog.LOG_ERR, logFlag)
+	if err != nil {
+		return nil, err
+	}
+	warnLogger, err := syslog.NewLogger(syslog.LOG_LOCAL0|syslog.LOG_WARNING, logFlag)
+	if err != nil {
+		return nil, err
+	}
+	infoLogger, err := syslog.NewLogger(syslog.LOG_LOCAL0|syslog.LOG_INFO, logFlag)
+	if err != nil {
+		return nil, err
+	}
+	return &SyslogLogger{errLogger, warnLogger, infoLogger}, nil
+}
+
+func (l *SyslogLogger) Error(format string, a ...any) {
+	l.errLogger.Printf(format+"\n", a...)
+}
+
+func (l *SyslogLogger) Warn(format string, a ...any) {
+	l.warnLogger.Printf(format+"\n", a...)
+}
+
+func (l *SyslogLogger) Info(format string, a ...any) {
+	l.infoLogger.Printf(format+"\n", a...)
+}
+
+var dFlag = flag.Bool("d", false, "debug mode: log to stderr instead of syslog")
+
 //go:embed static
 var static embed.FS
 
@@ -62,8 +128,7 @@ func init() {
 	var err error
 	cfg, err = readConfig(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		panic(err)
 	}
 	if cfg.HTTP.Addr == "" {
 		cfg.HTTP.Addr = "127.0.0.1:8080"
@@ -78,6 +143,21 @@ func init() {
 }
 
 func main() {
+	flag.Parse()
+
+	var logger Logger
+	if *dFlag {
+		logger = NewStderrLogger()
+	} else {
+		var err error
+		logger, err = NewSyslogLogger()
+		if err != nil {
+			// We're in daemon mode: there's no point in trying to
+			// print anything to stdout or stderr, so just panic.
+			panic(err)
+		}
+	}
+
 	mux := http.NewServeMux()
 
 	mux.Handle("/static/", http.FileServer(http.FS(static)))
@@ -86,13 +166,13 @@ func main() {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/index.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /: parsing template: %v\n", err)
+				logger.Error("GET /: parsing template: %v", err)
 				internalServerError(w)
 				return
 			}
 			uploadedFiles, err := getUploadedFiles(cfg.Storage.UploadedFilesDir)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /: getting list of uploaded files: %v\n", err)
+				logger.Error("GET /: getting list of uploaded files: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -103,7 +183,7 @@ func main() {
 				"UploadedFiles": uploadedFiles,
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /: executing template: %v\n", err)
+				logger.Error("GET /: executing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -120,20 +200,20 @@ func main() {
 			}
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/login.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /login: parsing template: %v\n", err)
+				logger.Error("GET /login: parsing template: %v", err)
 				internalServerError(w)
 				return
 			}
 			err = tmpl.Execute(w, nil)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /login: executing template: %v\n", err)
+				logger.Error("GET /login: executing template: %v", err)
 				internalServerError(w)
 				return
 			}
 		} else if r.Method == http.MethodPost {
 			err := r.ParseForm()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /login: parsing form: %v", err)
+				logger.Error("POST /login: parsing form: %v", err)
 				internalServerError(w)
 				return
 
@@ -145,17 +225,17 @@ func main() {
 				return
 			}
 			if err := authenticateUser(r, r.PostForm.Get("username"), r.PostForm.Get("password")); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /login: authenticating user %q: %v\n", r.PostForm.Get("username"), err)
+				logger.Error("POST /login: authenticating user %q: %v", r.PostForm.Get("username"), err)
 
 				tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/login.tmpl")
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error: POST /login: parsing template: %v\n", err)
+					logger.Error("POST /login: parsing template: %v", err)
 					internalServerError(w)
 					return
 				}
 				err = tmpl.Execute(w, map[string]any{"BadLogin": true})
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error: POST /login: executing template: %v\n", err)
+					logger.Error("POST /login: executing template: %v", err)
 					internalServerError(w)
 					return
 				}
@@ -170,7 +250,7 @@ func main() {
 	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			if err := sessionManager.Destroy(r.Context()); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /logout: clearing session data: %v\n", err)
+				logger.Error("POST /logout: clearing session data: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -188,7 +268,7 @@ func main() {
 			}
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/text.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /text: parsing template: %v\n", err)
+				logger.Error("GET /text: parsing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -197,7 +277,7 @@ func main() {
 				"User":          sessionManager.GetString(r.Context(), "user"),
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /text: executing template: %v\n", err)
+				logger.Error("GET /text: executing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -208,7 +288,7 @@ func main() {
 			}
 			err := r.ParseForm()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /text: parsing form: %v", err)
+				logger.Error("POST /text: parsing form: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -220,40 +300,40 @@ func main() {
 			}
 			filename, err := generateTextFileName()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /text: generating title: %v", err)
+				logger.Error("POST /text: generating title: %v", err)
 				internalServerError(w)
 				return
 			}
 			err = os.WriteFile(filepath.Join(cfg.Storage.UploadedFilesDir, filename), []byte(r.PostForm.Get("input")), 0600)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /text: writing file: %v", err)
+				logger.Error("POST /text: writing file: %v", err)
 				internalServerError(w)
 				return
 			}
 			db, err := sql.Open("sqlite3", cfg.Storage.DBPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /text: %v", err)
+				logger.Error("POST /text: %v", err)
 				internalServerError(w)
 				return
 			}
 			defer db.Close()
 			stmt, err := db.Prepare(`insert into uploaded_files(title, uploader, file_path, created_at) values(?, ?, ?, ?)`)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /text: %v", err)
+				logger.Error("POST /text: %v", err)
 				internalServerError(w)
 				return
 			}
 			defer stmt.Close()
 			_, err = stmt.Exec(filename, sessionManager.GetString(r.Context(), "user"), filename, time.Now().Unix())
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /text: %v", err)
+				logger.Error("POST /text: %v", err)
 				internalServerError(w)
 				return
 			}
 
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/upload-success.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /text: parsing template: %v\n", err)
+				logger.Error("POST /text: parsing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -264,7 +344,7 @@ func main() {
 				"Link": fmt.Sprintf("%s://%s/t/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, filename),
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /text: executing template: %v\n", err)
+				logger.Error("POST /text: executing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -281,7 +361,7 @@ func main() {
 			}
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/files.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /files: parsing template: %v\n", err)
+				logger.Error("GET /files: parsing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -290,7 +370,7 @@ func main() {
 				"User":          sessionManager.GetString(r.Context(), "user"),
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /files: executing template: %v\n", err)
+				logger.Error("GET /files: executing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -301,38 +381,38 @@ func main() {
 			}
 			err := r.ParseMultipartForm(1 << 20) // 1 MB (max. upload size)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /files: parsing multipart form: %v", err)
+				logger.Error("POST /files: parsing multipart form: %v", err)
 				internalServerError(w)
 				return
 			}
 			uploadedFile, header, err := r.FormFile("uploadedFile")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /files: get form file: %v", err)
+				logger.Error("POST /files: get form file: %v", err)
 				internalServerError(w)
 				return
 			}
 			destFile, err := os.Create(filepath.Join(cfg.Storage.UploadedFilesDir, header.Filename))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /files: creating file: %v", err)
+				logger.Error("POST /files: creating file: %v", err)
 				internalServerError(w)
 				return
 			}
 			err = destFile.Chmod(0600)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /files: changing file perms: %v", err)
+				logger.Error("POST /files: changing file perms: %v", err)
 				internalServerError(w)
 				return
 			}
 			_, err = io.Copy(destFile, uploadedFile)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /files: writing file: %v", err)
+				logger.Error("POST /files: writing file: %v", err)
 				internalServerError(w)
 				return
 			}
 
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/upload-success.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /files: parsing template: %v\n", err)
+				logger.Error("POST /files: parsing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -343,7 +423,7 @@ func main() {
 				"Link": fmt.Sprintf("%s://%s/u/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, header.Filename),
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: POST /files: executing template: %v\n", err)
+				logger.Error("POST /files: executing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -356,14 +436,14 @@ func main() {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/t.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /t/: parsing template: %v\n", err)
+				logger.Error("GET /t/: parsing template: %v", err)
 				internalServerError(w)
 				return
 			}
 			filename := strings.TrimPrefix(r.URL.Path, "/t/")
 			rawText, err := os.ReadFile(filepath.Join(cfg.Storage.UploadedFilesDir, filename))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /t/: reading file: %v\n", err)
+				logger.Error("GET /t/: reading file: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -375,7 +455,7 @@ func main() {
 				"Text":  string(rawText),
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /t/: executing template: %v\n", err)
+				logger.Error("GET /t/: executing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -388,13 +468,13 @@ func main() {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/u.tmpl")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /u/: parsing template: %v\n", err)
+				logger.Error("GET /u/: parsing template: %v", err)
 				internalServerError(w)
 				return
 			}
 			safeFilename, err := sanitizeFilename(strings.TrimPrefix(r.URL.Path, "/u/"))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /u/: %v\n", err)
+				logger.Error("GET /u/: %v", err)
 				// TODO: Return Bad Request and a proper error message.
 				internalServerError(w)
 				return
@@ -410,7 +490,7 @@ func main() {
 				"RawfileLink": fmt.Sprintf("%s://%s/dl/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, safeFilename),
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /u/: executing template: %v\n", err)
+				logger.Error("GET /u/: executing template: %v", err)
 				internalServerError(w)
 				return
 			}
@@ -423,14 +503,14 @@ func main() {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			safeFilename, err := sanitizeFilename(strings.TrimPrefix(r.URL.Path, "/dl/"))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /dl/: %v\n", err)
+				logger.Error("GET /dl/: %v", err)
 				// TODO: Return Bad Request and a proper error message.
 				internalServerError(w)
 				return
 			}
 			f, err := os.Open(filepath.Join(cfg.Storage.UploadedFilesDir, safeFilename))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: GET /dl/: %v\n", err)
+				logger.Error("GET /dl/: %v", err)
 				// TODO: Return Bad Request and a proper error message.
 				internalServerError(w)
 				return
@@ -443,7 +523,7 @@ func main() {
 		}
 	})
 
-	fmt.Printf("Serving application on %s...\n", cfg.HTTP.Addr)
+	logger.Info("Serving application on http://%s...", cfg.HTTP.Addr)
 	log.Fatal(http.ListenAndServe(cfg.HTTP.Addr, sessionManager.LoadAndSave(mux)))
 }
 
