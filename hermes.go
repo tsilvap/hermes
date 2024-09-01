@@ -111,8 +111,8 @@ func (l *SyslogLogger) Info(format string, a ...any) {
 
 var dFlag = flag.Bool("d", false, "debug mode: log to stderr instead of syslog")
 
-//go:embed static
-var static embed.FS
+//go:embed static templates
+var content embed.FS
 
 var sessionManager *scs.SessionManager
 
@@ -160,11 +160,11 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.Handle("/static/", http.FileServer(http.FS(static)))
+	mux.Handle("/static/", http.FileServer(http.FS(content)))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/index.tmpl")
+			tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/index.tmpl")
 			if err != nil {
 				logger.Error("GET /: parsing template: %v", err)
 				internalServerError(w)
@@ -198,7 +198,7 @@ func main() {
 				sendTo(w, "/")
 				return
 			}
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/login.tmpl")
+			tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/login.tmpl")
 			if err != nil {
 				logger.Error("GET /login: parsing template: %v", err)
 				internalServerError(w)
@@ -227,7 +227,7 @@ func main() {
 			if err := authenticateUser(r, r.PostForm.Get("username"), r.PostForm.Get("password")); err != nil {
 				logger.Error("POST /login: authenticating user %q: %v", r.PostForm.Get("username"), err)
 
-				tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/login.tmpl")
+				tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/login.tmpl")
 				if err != nil {
 					logger.Error("POST /login: parsing template: %v", err)
 					internalServerError(w)
@@ -266,7 +266,7 @@ func main() {
 				sendTo(w, "/login")
 				return
 			}
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/text.tmpl")
+			tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/text.tmpl")
 			if err != nil {
 				logger.Error("GET /text: parsing template: %v", err)
 				internalServerError(w)
@@ -331,7 +331,7 @@ func main() {
 				return
 			}
 
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/upload-success.tmpl")
+			tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/upload-success.tmpl")
 			if err != nil {
 				logger.Error("POST /text: parsing template: %v", err)
 				internalServerError(w)
@@ -359,7 +359,7 @@ func main() {
 				sendTo(w, "/login")
 				return
 			}
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/files.tmpl")
+			tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/files.tmpl")
 			if err != nil {
 				logger.Error("GET /files: parsing template: %v", err)
 				internalServerError(w)
@@ -410,7 +410,7 @@ func main() {
 				return
 			}
 
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/upload-success.tmpl")
+			tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/upload-success.tmpl")
 			if err != nil {
 				logger.Error("POST /files: parsing template: %v", err)
 				internalServerError(w)
@@ -434,7 +434,7 @@ func main() {
 
 	mux.HandleFunc("/t/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/t.tmpl")
+			tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/t.tmpl")
 			if err != nil {
 				logger.Error("GET /t/: parsing template: %v", err)
 				internalServerError(w)
@@ -466,7 +466,7 @@ func main() {
 
 	mux.HandleFunc("/u/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			tmpl, err := template.ParseFiles("templates/base.tmpl", "templates/u.tmpl")
+			tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/u.tmpl")
 			if err != nil {
 				logger.Error("GET /u/: parsing template: %v", err)
 				internalServerError(w)
