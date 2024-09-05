@@ -92,7 +92,13 @@ func main() {
 	logger := NewStderrLogger()
 
 	app := App{Logger: logger}
+	r := appRouter(app)
 
+	logger.Info("Serving application on http://%s...", cfg.HTTP.Addr)
+	log.Fatal(http.ListenAndServe(cfg.HTTP.Addr, r))
+}
+
+func appRouter(app App) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(sessionManager.LoadAndSave)
@@ -116,8 +122,7 @@ func main() {
 	r.Get("/u/{fileID}", app.filePage)
 	r.Get("/dl/{fileID}", app.getRawFile)
 
-	logger.Info("Serving application on http://%s...", cfg.HTTP.Addr)
-	log.Fatal(http.ListenAndServe(cfg.HTTP.Addr, r))
+	return r
 }
 
 func readConfig(path string) (Config, error) {
