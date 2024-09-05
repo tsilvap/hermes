@@ -13,7 +13,6 @@ import (
 	"html/template"
 	"io"
 	"log"
-	"log/syslog"
 	"math/big"
 	"mime"
 	"net/http"
@@ -47,12 +46,6 @@ type StorageConfig struct {
 
 var cfg Config
 
-type Logger interface {
-	Error(format string, a ...any)
-	Warn(format string, a ...any)
-	Info(format string, a ...any)
-}
-
 type StderrLogger struct {
 	logger *log.Logger
 }
@@ -73,43 +66,6 @@ func (l *StderrLogger) Warn(format string, a ...any) {
 func (l *StderrLogger) Info(format string, a ...any) {
 	l.logger.Printf("INFO: "+format+"\n", a...)
 }
-
-type SyslogLogger struct {
-	errLogger  *log.Logger
-	warnLogger *log.Logger
-	infoLogger *log.Logger
-}
-
-func NewSyslogLogger() (*SyslogLogger, error) {
-	logFlag := log.LstdFlags
-	errLogger, err := syslog.NewLogger(syslog.LOG_LOCAL0|syslog.LOG_ERR, logFlag)
-	if err != nil {
-		return nil, err
-	}
-	warnLogger, err := syslog.NewLogger(syslog.LOG_LOCAL0|syslog.LOG_WARNING, logFlag)
-	if err != nil {
-		return nil, err
-	}
-	infoLogger, err := syslog.NewLogger(syslog.LOG_LOCAL0|syslog.LOG_INFO, logFlag)
-	if err != nil {
-		return nil, err
-	}
-	return &SyslogLogger{errLogger, warnLogger, infoLogger}, nil
-}
-
-func (l *SyslogLogger) Error(format string, a ...any) {
-	l.errLogger.Printf(format+"\n", a...)
-}
-
-func (l *SyslogLogger) Warn(format string, a ...any) {
-	l.warnLogger.Printf(format+"\n", a...)
-}
-
-func (l *SyslogLogger) Info(format string, a ...any) {
-	l.infoLogger.Printf(format+"\n", a...)
-}
-
-var dFlag = flag.Bool("d", false, "debug mode: log to stderr instead of syslog")
 
 //go:embed static templates
 var content embed.FS
@@ -145,18 +101,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	var logger Logger
-	if *dFlag {
-		logger = NewStderrLogger()
-	} else {
-		var err error
-		logger, err = NewSyslogLogger()
-		if err != nil {
-			// We're in daemon mode: there's no point in trying to
-			// print anything to stdout or stderr, so just panic.
-			panic(err)
-		}
-	}
+	logger := NewStderrLogger()
 
 	mux := http.NewServeMux()
 
