@@ -34,13 +34,25 @@ func Test404(t *testing.T) {
 	s := getTestServer()
 	defer s.Close()
 
-	r, err := s.Client().Get(s.URL + "/notexistent")
-	if err != nil {
-		t.Fatal(err)
+	testCases := []struct {
+		Path string
+	}{
+		{"/notexistent"},
+		{"/t"}, {"/t/"}, {"/t/notexistent"},
+		{"/u"}, {"/u/"}, {"/u/notexistent"},
+		{"/dl"}, {"/dl/"}, {"/dl/notexistent"},
 	}
-	got, want := r.StatusCode, http.StatusNotFound
-	if got != want {
-		t.Errorf("r.StatusCode = %d, want %d", got, want)
+	for _, tc := range testCases {
+		t.Run("GET "+tc.Path, func(t *testing.T) {
+			r, err := s.Client().Get(s.URL + tc.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, want := r.StatusCode, http.StatusNotFound
+			if got != want {
+				t.Errorf("r.StatusCode = %d, want %d", got, want)
+			}
+		})
 	}
 }
 

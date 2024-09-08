@@ -265,7 +265,7 @@ func (a App) uploadFileAction(w http.ResponseWriter, r *http.Request) {
 func (a App) textPage(w http.ResponseWriter, r *http.Request) {
 	safeFilename, err := sanitizeFilename(chi.URLParam(r, "fileID"))
 	if err != nil {
-		a.Logger.Error("GET /u/: %v", err)
+		a.Logger.Error("GET /t/: %v", err)
 		// TODO: Return Bad Request and a proper error message.
 		internalServerError(w)
 		return
@@ -278,7 +278,11 @@ func (a App) textPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rawText, err := os.ReadFile(filepath.Join(cfg.Storage.UploadedFilesDir, safeFilename))
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
+		a.Logger.Error("GET /t/: reading file: %v", err)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	} else if err != nil {
 		a.Logger.Error("GET /t/: reading file: %v", err)
 		internalServerError(w)
 		return
@@ -302,6 +306,16 @@ func (a App) filePage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.Logger.Error("GET /u/: %v", err)
 		// TODO: Return Bad Request and a proper error message.
+		internalServerError(w)
+		return
+	}
+
+	if _, err := os.Stat(filepath.Join(cfg.Storage.UploadedFilesDir, safeFilename)); errors.Is(err, os.ErrNotExist) {
+		a.Logger.Error("GET /u/: reading file: %v", err)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		a.Logger.Error("GET /u/: reading file: %v", err)
 		internalServerError(w)
 		return
 	}
@@ -339,9 +353,12 @@ func (a App) getRawFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	f, err := os.Open(filepath.Join(cfg.Storage.UploadedFilesDir, safeFilename))
-	if err != nil {
-		a.Logger.Error("GET /dl/: %v", err)
-		// TODO: Return Bad Request and a proper error message.
+	if errors.Is(err, os.ErrNotExist) {
+		a.Logger.Error("GET /dl/: reading file: %v", err)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		a.Logger.Error("GET /dl/: reading file: %v", err)
 		internalServerError(w)
 		return
 	}
