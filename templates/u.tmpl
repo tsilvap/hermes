@@ -1,6 +1,6 @@
 {{define "body"}}
   {{with .UploadedFile}}
-    <h2>{{.Title}}</h2>
+    <h1>{{.Title}}</h1>
 
     {{if eq .Type "image"}}
       <img src="{{.RawFileHref}}" alt="{{.Title}}" />
