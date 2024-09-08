@@ -2,6 +2,7 @@
 package main
 
 import (
+	"database/sql"
 	"embed"
 	"fmt"
 	"log"
@@ -61,13 +62,19 @@ type App struct {
 //go:embed static templates
 var content embed.FS
 
+//go:embed sql/hermes.sql
+var hermesSQL string
+
 var sessionManager *scs.SessionManager
 
 func init() {
-	sessionManager = scs.New()
-	sessionManager.Lifetime = 365 * 24 * time.Hour
-	sessionManager.Cookie.Name = "id"
+	initConfig()
+	initDB()
+	initSession()
+}
 
+// Initialize config.
+func initConfig() {
 	configPath := os.Getenv("HERMES_CONFIG")
 	if configPath == "" {
 		configPath = "/etc/hermes/config.toml"
@@ -86,6 +93,26 @@ func init() {
 	if cfg.Storage.UploadedFilesDir == "" {
 		cfg.Storage.UploadedFilesDir = "/var/hermes/uploaded_files/"
 	}
+}
+
+// Initialize database. Must be run after config has been initialized.
+func initDB() {
+	db, err := sql.Open("sqlite3", cfg.Storage.DBPath)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(hermesSQL)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// Initialize session manager.
+func initSession() {
+	sessionManager = scs.New()
+	sessionManager.Lifetime = 365 * 24 * time.Hour
+	sessionManager.Cookie.Name = "id"
 }
 
 func main() {
