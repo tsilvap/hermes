@@ -17,14 +17,14 @@
         <div class="flex-none">
           <ul class="menu menu-horizontal px-1">
             {{if .Authenticated}}
-            <li><p>{{.User}}</p></li>
-            <li>
-              <form action="/logout" method="POST">
-                <button type="Submit">Logout</a>
-              </form>
-            </li>
+              <li><p>{{.User}}</p></li>
+              <li>
+                <form action="/logout" method="POST">
+                  <button type="Submit">Logout</a>
+                </form>
+              </li>
             {{else}}
-            <li><a href="/login">Login</a></li>
+              <li><a href="/login">Login</a></li>
             {{end}}
           </ul>
         </div>
