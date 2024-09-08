@@ -1,5 +1,5 @@
 {{define "body"}}
-  <h1 class="text-3xl text-bold mb-4">{{.File.Title}}</h1>
+  <h1 class="text-3xl font-bold mb-4">{{.File.Title}}</h1>
   <div class="mb-4">
     {{if eq .File.Type "image"}}
       <img src="{{.File.RawFileHref}}" alt="{{.File.Title}}" />
