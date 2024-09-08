@@ -297,8 +297,9 @@ func (a App) textPage(w http.ResponseWriter, r *http.Request) {
 		"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
 		"User":          sessionManager.GetString(r.Context(), "user"),
 
-		"Title": f.Title,
-		"Text":  string(rawText),
+		"HermesHref": fmt.Sprintf("%s://%s", cfg.HTTP.Schema, cfg.HTTP.DomainName),
+		"File":       f,
+		"Text":       string(rawText),
 	})
 	if err != nil {
 		a.Logger.Error("GET /t/: executing template: %v", err)
@@ -341,8 +342,8 @@ func (a App) filePage(w http.ResponseWriter, r *http.Request) {
 		"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
 		"User":          sessionManager.GetString(r.Context(), "user"),
 
-		"HermesHref":   fmt.Sprintf("%s://%s", cfg.HTTP.Schema, cfg.HTTP.DomainName),
-		"UploadedFile": f,
+		"HermesHref": fmt.Sprintf("%s://%s", cfg.HTTP.Schema, cfg.HTTP.DomainName),
+		"File":       f,
 	})
 	if err != nil {
 		a.Logger.Error("GET /u/: executing template: %v", err)

@@ -1,4 +1,14 @@
 {{define "body"}}
-  <h1>{{.Title}}</h1>
-  <textarea cols="30" rows="10" disabled>{{.Text}}</textarea>
+  <h1 class="text-3xl text-bold mb-4">{{.File.Title}}</h1>
+
+  <textarea class="textarea textarea-bordered w-full mb-4" rows="10" disabled>{{.Text}}</textarea>
+
+  <p class="mb-4">Uploaded by {{.File.Uploader}} on {{.File.Created}}</p>
+
+  <div class="w-full">
+    <div class="label">
+      <span class="label-text">Link to raw file:</span>
+    </div>
+    <input class="input input-bordered w-full" type="url" value="{{.HermesHref}}{{.File.RawFileHref}}" readonly />
+  </div>
 {{end}}
