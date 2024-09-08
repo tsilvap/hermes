@@ -2,6 +2,33 @@
 
 Hermes is a data upload app.
 
+## Build
+
+### Requirements
+
+- Go 1.21.1
+- Node.js (any recent version should work)
+
+### How to build
+
+1. Install Node.js dependencies.
+
+``` shell
+npm install
+```
+
+2. Generate the static CSS files.
+
+``` shell
+go generate
+```
+
+3. Build the standalone binary.
+
+``` shell
+go build
+```
+
 ## Usage
 
 Create a configuration file and customize it according to your needs:
