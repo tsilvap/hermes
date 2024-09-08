@@ -14,6 +14,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/tsilvap/hermes/internal/models"
 )
 
 type Config struct {
@@ -57,6 +59,8 @@ func (l *StderrLogger) Info(format string, a ...any) {
 
 type App struct {
 	Logger *StderrLogger
+
+	uploadedFiles *models.UploadedFileModel
 }
 
 //go:embed static templates
@@ -118,9 +122,18 @@ func initSession() {
 func main() {
 	logger := NewStderrLogger()
 
-	app := App{Logger: logger}
-	r := appRouter(app)
+	db, err := sql.Open("sqlite3", cfg.Storage.DBPath)
+	if err != nil {
+		logger.Error("opening hermes database: %v", err)
+		os.Exit(1)
+	}
+	defer db.Close()
 
+	app := App{
+		Logger:        logger,
+		uploadedFiles: &models.UploadedFileModel{DB: db},
+	}
+	r := appRouter(app)
 	logger.Info("Serving application on http://%s...", cfg.HTTP.Addr)
 	log.Fatal(http.ListenAndServe(cfg.HTTP.Addr, r))
 }

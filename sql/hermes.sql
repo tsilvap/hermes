@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
        title TEXT,
        uploader TEXT,
        file_path TEXT,
-       created_at INTEGER
+       created_at DATETIME
 );

@@ -7,11 +7,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/tsilvap/hermes/internal/models"
 )
 
 func getTestServer() *httptest.Server {
 	logger := NewStderrLogger()
-	app := App{Logger: logger}
+	app := App{Logger: logger, uploadedFiles: &models.UploadedFileModel{DB: nil}}
 	r := appRouter(app)
 	return httptest.NewServer(r)
 }

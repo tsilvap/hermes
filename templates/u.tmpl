@@ -1,15 +1,17 @@
 {{define "body"}}
+{{with .UploadedFile}}
 <h2>{{.Title}}</h2>
 
-{{if eq .FileType "image"}}
-<img src="{{.RawfileLink}}" alt="{{.Title}}" />
-{{else if eq .FileType "video"}}
+{{if eq .Type "image"}}
+<img src="{{.RawFileHref}}" alt="{{.Title}}" />
+{{else if eq .Type "video"}}
 <video controls>
-  <source src="{{.RawfileLink}}" type="{{.MIMEType}}" />
+  <source src="{{.RawFileHref}}" type="{{.MIMEType}}" />
 </video>
 {{else}}
 <p>No preview available for this file type.</p>
 {{end}}
+{{end}}
 
-<p>Link to raw file: <input type="url" value="{{.RawfileLink}}" readonly /></p>
+<p>Link to raw file: <input type="url" value="{{.HermesHref}}{{.UploadedFile.RawFileHref}}" readonly /></p>
 {{end}}

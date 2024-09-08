@@ -5,17 +5,17 @@
   <a class="btn btn-secondary" href="/files">File</a>
 </div>
 <div>
-  <h2 class="text-3xl text-bold mb-4">Uploaded files</h2>
+  <h2 class="text-3xl text-bold mb-4">Latest Uploads</h2>
   <div class="grid grid-cols-3 gap-4 max-w-4xl">
-    {{range .UploadedFiles}}
+    {{range .LatestUploads}}
     {{if eq .Type "image"}}
-    <a href="{{.PageLink}}">
+    <a href="{{.FileHref}}">
       <div class="card bg-base-100 shadow-xl w-44 h-60 hover:brightness-90">
         <figure>
-          <img alt="{{.Name}}" src="{{.FileLink}}">
+          <img alt="{{.Title}}" src="{{.RawFileHref}}">
         </figure>
         <div class="card-body">
-          <h2 class="card-title">{{.Name}}</h2>
+          <h2 class="card-title">{{.Title}}</h2>
         </div>
       </div>
     </a>

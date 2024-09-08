@@ -9,13 +9,12 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
-	"time"
 
 	"golang.org/x/crypto/argon2"
 
@@ -29,7 +28,7 @@ func (a App) index(w http.ResponseWriter, r *http.Request) {
 		internalServerError(w)
 		return
 	}
-	uploadedFiles, err := getUploadedFiles(cfg.Storage.UploadedFilesDir)
+	latestUploads, err := a.uploadedFiles.Latest()
 	if err != nil {
 		a.Logger.Error("GET /: getting list of uploaded files: %v", err)
 		internalServerError(w)
@@ -39,7 +38,7 @@ func (a App) index(w http.ResponseWriter, r *http.Request) {
 		"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
 		"User":          sessionManager.GetString(r.Context(), "user"),
 
-		"UploadedFiles": uploadedFiles,
+		"LatestUploads": latestUploads,
 	})
 	if err != nil {
 		a.Logger.Error("GET /: executing template: %v", err)
@@ -153,21 +152,12 @@ func (a App) uploadTextAction(w http.ResponseWriter, r *http.Request) {
 		internalServerError(w)
 		return
 	}
-	db, err := sql.Open("sqlite3", cfg.Storage.DBPath)
-	if err != nil {
-		a.Logger.Error("POST /text: %v", err)
-		internalServerError(w)
-		return
+
+	title := r.PostForm.Get("title")
+	if title == "" {
+		title = filename
 	}
-	defer db.Close()
-	stmt, err := db.Prepare(`insert into uploaded_files(title, uploader, file_path, created_at) values(?, ?, ?, ?)`)
-	if err != nil {
-		a.Logger.Error("POST /text: %v", err)
-		internalServerError(w)
-		return
-	}
-	defer stmt.Close()
-	_, err = stmt.Exec(filename, sessionManager.GetString(r.Context(), "user"), filename, time.Now().Unix())
+	id, err := a.uploadedFiles.Insert(title, sessionManager.GetString(r.Context(), "user"), filename)
 	if err != nil {
 		a.Logger.Error("POST /text: %v", err)
 		internalServerError(w)
@@ -184,7 +174,7 @@ func (a App) uploadTextAction(w http.ResponseWriter, r *http.Request) {
 		"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
 		"User":          sessionManager.GetString(r.Context(), "user"),
 
-		"Link": fmt.Sprintf("%s://%s/t/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, filename),
+		"Link": fmt.Sprintf("%s://%s/t/%d", cfg.HTTP.Schema, cfg.HTTP.DomainName, id),
 	})
 	if err != nil {
 		a.Logger.Error("POST /text: executing template: %v", err)
@@ -243,6 +233,17 @@ func (a App) uploadFileAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	title := r.PostForm.Get("title")
+	if title == "" {
+		title = header.Filename
+	}
+	id, err := a.uploadedFiles.Insert(title, sessionManager.GetString(r.Context(), "user"), header.Filename)
+	if err != nil {
+		a.Logger.Error("POST /files: %v", err)
+		internalServerError(w)
+		return
+	}
+
 	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/upload-success.tmpl")
 	if err != nil {
 		a.Logger.Error("POST /files: parsing template: %v", err)
@@ -253,7 +254,7 @@ func (a App) uploadFileAction(w http.ResponseWriter, r *http.Request) {
 		"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
 		"User":          sessionManager.GetString(r.Context(), "user"),
 
-		"Link": fmt.Sprintf("%s://%s/u/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, header.Filename),
+		"Link": fmt.Sprintf("%s://%s/u/%d", cfg.HTTP.Schema, cfg.HTTP.DomainName, id),
 	})
 	if err != nil {
 		a.Logger.Error("POST /files: executing template: %v", err)
@@ -263,11 +264,16 @@ func (a App) uploadFileAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a App) textPage(w http.ResponseWriter, r *http.Request) {
-	safeFilename, err := sanitizeFilename(chi.URLParam(r, "fileID"))
+	fileID, err := strconv.Atoi(chi.URLParam(r, "fileID"))
 	if err != nil {
 		a.Logger.Error("GET /t/: %v", err)
-		// TODO: Return Bad Request and a proper error message.
-		internalServerError(w)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+	f, err := a.uploadedFiles.Get(fileID)
+	if err != nil {
+		a.Logger.Error("GET /t/: %v", err)
+		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
 
@@ -277,7 +283,7 @@ func (a App) textPage(w http.ResponseWriter, r *http.Request) {
 		internalServerError(w)
 		return
 	}
-	rawText, err := os.ReadFile(filepath.Join(cfg.Storage.UploadedFilesDir, safeFilename))
+	rawText, err := os.ReadFile(filepath.Join(cfg.Storage.UploadedFilesDir, f.FilePath))
 	if errors.Is(err, os.ErrNotExist) {
 		a.Logger.Error("GET /t/: reading file: %v", err)
 		http.Error(w, "File not found", http.StatusNotFound)
@@ -291,7 +297,7 @@ func (a App) textPage(w http.ResponseWriter, r *http.Request) {
 		"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
 		"User":          sessionManager.GetString(r.Context(), "user"),
 
-		"Title": safeFilename,
+		"Title": f.Title,
 		"Text":  string(rawText),
 	})
 	if err != nil {
@@ -302,15 +308,20 @@ func (a App) textPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a App) filePage(w http.ResponseWriter, r *http.Request) {
-	safeFilename, err := sanitizeFilename(chi.URLParam(r, "fileID"))
+	fileID, err := strconv.Atoi(chi.URLParam(r, "fileID"))
 	if err != nil {
 		a.Logger.Error("GET /u/: %v", err)
-		// TODO: Return Bad Request and a proper error message.
-		internalServerError(w)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+	f, err := a.uploadedFiles.Get(fileID)
+	if err != nil {
+		a.Logger.Error("GET /u/: %v", err)
+		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
 
-	if _, err := os.Stat(filepath.Join(cfg.Storage.UploadedFilesDir, safeFilename)); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(cfg.Storage.UploadedFilesDir, f.FilePath)); errors.Is(err, os.ErrNotExist) {
 		a.Logger.Error("GET /u/: reading file: %v", err)
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
@@ -326,15 +337,12 @@ func (a App) filePage(w http.ResponseWriter, r *http.Request) {
 		internalServerError(w)
 		return
 	}
-	ctype := mime.TypeByExtension(filepath.Ext(safeFilename))
 	err = tmpl.Execute(w, map[string]any{
 		"Authenticated": sessionManager.GetBool(r.Context(), "authenticated"),
 		"User":          sessionManager.GetString(r.Context(), "user"),
 
-		"Title":       safeFilename,
-		"MIMEType":    ctype,
-		"FileType":    strings.Split(ctype, "/")[0],
-		"RawfileLink": fmt.Sprintf("%s://%s/dl/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, safeFilename),
+		"HermesHref":   fmt.Sprintf("%s://%s", cfg.HTTP.Schema, cfg.HTTP.DomainName),
+		"UploadedFile": f,
 	})
 	if err != nil {
 		a.Logger.Error("GET /u/: executing template: %v", err)
@@ -344,15 +352,20 @@ func (a App) filePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a App) getRawFile(w http.ResponseWriter, r *http.Request) {
-	safeFilename, err := sanitizeFilename(chi.URLParam(r, "fileID"))
+	fileID, err := strconv.Atoi(chi.URLParam(r, "fileID"))
 	if err != nil {
-		a.Logger.Error("GET /u/: %v", err)
-		// TODO: Return Bad Request and a proper error message.
-		internalServerError(w)
+		a.Logger.Error("GET /dl/: %v", err)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+	u, err := a.uploadedFiles.Get(fileID)
+	if err != nil {
+		a.Logger.Error("GET /dl/: %v", err)
+		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
 
-	f, err := os.Open(filepath.Join(cfg.Storage.UploadedFilesDir, safeFilename))
+	f, err := os.Open(filepath.Join(cfg.Storage.UploadedFilesDir, u.FilePath))
 	if errors.Is(err, os.ErrNotExist) {
 		a.Logger.Error("GET /dl/: reading file: %v", err)
 		http.Error(w, "File not found", http.StatusNotFound)
@@ -363,7 +376,7 @@ func (a App) getRawFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	http.ServeContent(w, r, safeFilename, time.Time{}, f)
+	http.ServeContent(w, r, u.FilePath, u.Created, f)
 }
 
 func unauthorized(w http.ResponseWriter) {
@@ -435,42 +448,6 @@ func authenticateUser(r *http.Request, username, password string) error {
 
 func loggedIn(r *http.Request) bool {
 	return sessionManager.GetBool(r.Context(), "authenticated")
-}
-
-type UploadedFile struct {
-	dirEntry os.DirEntry
-}
-
-func (f UploadedFile) Name() string {
-	return f.dirEntry.Name()
-}
-
-func (f UploadedFile) PageLink() string {
-	return fmt.Sprintf("%s://%s/u/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, f.Name())
-}
-
-func (f UploadedFile) FileLink() string {
-	return fmt.Sprintf("%s://%s/dl/%s", cfg.HTTP.Schema, cfg.HTTP.DomainName, f.Name())
-}
-
-func (f UploadedFile) MIMEType() string {
-	return mime.TypeByExtension(filepath.Ext(f.Name()))
-}
-
-func (f UploadedFile) Type() string {
-	return strings.Split(f.MIMEType(), "/")[0]
-}
-
-func getUploadedFiles(uploadedFilesDir string) ([]UploadedFile, error) {
-	files, err := os.ReadDir(uploadedFilesDir)
-	if err != nil {
-		return nil, err
-	}
-	var uploadedFiles []UploadedFile
-	for _, f := range files {
-		uploadedFiles = append(uploadedFiles, UploadedFile{dirEntry: f})
-	}
-	return uploadedFiles, nil
 }
 
 const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
