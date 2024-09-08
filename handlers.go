@@ -22,7 +22,7 @@ import (
 )
 
 func (a App) index(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/index.tmpl")
+	tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/index.tmpl")
 	if err != nil {
 		a.Logger.Error("GET /: parsing template: %v", err)
 		internalServerError(w)
@@ -53,7 +53,7 @@ func (a App) loginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/login.tmpl")
+	tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/login.tmpl")
 	if err != nil {
 		a.Logger.Error("GET /login: parsing template: %v", err)
 		internalServerError(w)
@@ -83,7 +83,7 @@ func (a App) loginAction(w http.ResponseWriter, r *http.Request) {
 	if err := authenticateUser(r, r.PostForm.Get("username"), r.PostForm.Get("password")); err != nil {
 		a.Logger.Error("POST /login: authenticating user %q: %v", r.PostForm.Get("username"), err)
 
-		tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/login.tmpl")
+		tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/login.tmpl")
 		if err != nil {
 			a.Logger.Error("POST /login: parsing template: %v", err)
 			internalServerError(w)
@@ -110,7 +110,7 @@ func (a App) logoutAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a App) uploadTextPage(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/text.tmpl")
+	tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/text.tmpl")
 	if err != nil {
 		a.Logger.Error("GET /text: parsing template: %v", err)
 		internalServerError(w)
@@ -164,7 +164,7 @@ func (a App) uploadTextAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/upload-success.tmpl")
+	tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/upload-success.tmpl")
 	if err != nil {
 		a.Logger.Error("POST /text: parsing template: %v", err)
 		internalServerError(w)
@@ -184,7 +184,7 @@ func (a App) uploadTextAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a App) uploadFilePage(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/files.tmpl")
+	tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/files.tmpl")
 	if err != nil {
 		a.Logger.Error("GET /files: parsing template: %v", err)
 		internalServerError(w)
@@ -244,7 +244,7 @@ func (a App) uploadFileAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/upload-success.tmpl")
+	tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/upload-success.tmpl")
 	if err != nil {
 		a.Logger.Error("POST /files: parsing template: %v", err)
 		internalServerError(w)
@@ -277,7 +277,7 @@ func (a App) textPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/t.tmpl")
+	tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/t.tmpl")
 	if err != nil {
 		a.Logger.Error("GET /t/: parsing template: %v", err)
 		internalServerError(w)
@@ -332,7 +332,7 @@ func (a App) filePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(content, "templates/base.tmpl", "templates/u.tmpl")
+	tmpl, err := template.ParseFS(templatesFS, "templates/base.tmpl", "templates/u.tmpl")
 	if err != nil {
 		a.Logger.Error("GET /u/: parsing template: %v", err)
 		internalServerError(w)

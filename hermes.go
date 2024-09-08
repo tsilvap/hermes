@@ -63,8 +63,11 @@ type App struct {
 	uploadedFiles *models.UploadedFileModel
 }
 
-//go:embed static templates
-var content embed.FS
+//go:embed static
+var staticFS embed.FS
+
+//go:embed templates
+var templatesFS embed.FS
 
 //go:embed sql/hermes.sql
 var hermesSQL string
@@ -143,7 +146,7 @@ func appRouter(app App) *chi.Mux {
 
 	r.Use(sessionManager.LoadAndSave)
 
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(content))))
+	r.Handle("/static/*", http.FileServer(http.FS(staticFS)))
 	r.Get("/", app.index)
 	r.Route("/login", func(r chi.Router) {
 		r.Get("/", app.loginPage)
